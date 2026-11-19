@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eaf3ff">
+  <title>WeatherOps — Local weather dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/dashboard.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/"><span aria-hidden="true">◈</span> WeatherOps</a>
+    <span class="units">°C <span aria-hidden="true">·</span> km/h</span>
+  </header>
+  <main>
+    <section class="intro" aria-labelledby="title">
+      <h1 id="title">Let's check the weather.</h1>
+      <p>Current conditions and a five-day outlook for any city.</p>
+      <form id="search">
+        <label class="sr-only" for="city">City name</label>
+        <input id="city" name="city" required minlength="2" maxlength="100"
+               placeholder="Search for a city" enterkeyhint="search">
+        <button type="submit">Search</button>
+      </form>
+      <div class="suggestions" aria-label="Suggested cities">
+        <button type="button" data-city="London">London</button>
+        <button type="button" data-city="Tokyo">Tokyo</button>
+        <button type="button" data-city="New York">New York</button>
+      </div>
+    </section>
+
+    <p id="status" class="status" role="status"></p>
+    <p id="error" class="error" role="alert" hidden></p>
+    <section id="empty" class="empty card">
+      <div class="sky-art" aria-hidden="true"><span></span><i></i></div>
+      <h2>Choose a city to get started</h2>
+      <p>Search above or pick a suggested city.</p>
+    </section>
+    <div id="results" hidden>
+      <section id="current" class="current card" aria-label="Current conditions"></section>
+      <section class="outlook" aria-labelledby="forecast-title">
+        <h2 id="forecast-title">5-day forecast</h2>
+        <ul id="days" class="days"></ul>
+      </section>
+    </div>
+  </main>
+  <footer>Weather data from <a href="https://open-meteo.com/">Open-Meteo</a></footer>
+</body>
+</html>
