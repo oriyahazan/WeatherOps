@@ -1,0 +1,28 @@
+replicaCount: 2
+
+image:
+  repository: weatherops
+  tag: "1.0"
+  pullPolicy: IfNotPresent
+
+containerPort: 8000
+healthPath: /healthcheck
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: true
+  className: nginx
+  host: weatherops.local
+  path: /
+  pathType: Prefix
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
