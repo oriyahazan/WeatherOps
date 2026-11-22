@@ -32,7 +32,7 @@ def test_dashboard_info_and_health_are_local():
         page = client.get("/")
         assert page.status_code == 200
         assert page.headers["content-type"].startswith("text/html")
-        assert "Weather, at a glance." in page.text
+        assert "Let's check the weather." in page.text
         for asset in ("styles.css", "dashboard.js"):
             assert client.get(f"/static/{asset}").status_code == 200
         assert client.get("/healthcheck").json() == {"status": "ok"}
