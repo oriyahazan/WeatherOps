@@ -1,0 +1,167 @@
+---
+- name: Validate the host and K3s inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == 'Ubuntu'
+      - ansible_distribution_version == '24.04'
+      - ansible_architecture == 'x86_64'
+      - k3s_version is match('^v[0-9]+\.[0-9]+\.[0-9]+\+k3s[0-9]+$')
+      - k3s_node_port is integer
+      - k3s_node_port >= 30000 and k3s_node_port <= 32767
+
+- name: Install K3s installer prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - iptables
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Persist the container overlay and Flannel VXLAN modules
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/weatherops-k3s.conf
+    content: |
+      overlay
+      vxlan
+    mode: "0644"
+
+- name: Load the container overlay and Flannel VXLAN modules
+  ansible.builtin.command: "modprobe {{ item }}"
+  loop:
+    - overlay
+    - vxlan
+  changed_when: false
+
+- name: Persist IPv4 forwarding for pod networking
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-weatherops-k3s.conf
+    content: |
+      net.ipv4.ip_forward = 1
+    mode: "0644"
+
+- name: Enable IPv4 forwarding
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-weatherops-k3s.conf
+  changed_when: false
+
+- name: Create K3s configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/rancher/k3s
+    - /var/lib/rancher/k3s/server/manifests
+
+- name: Configure the single-node K3s server
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    content: |
+      write-kubeconfig-mode: "0600"
+      disable:
+        - servicelb
+    mode: "0600"
+  notify: Restart K3s after config changes
+
+- name: Configure bundled Traefik for the ALB
+  ansible.builtin.template:
+    src: traefik-config.yaml.j2
+    dest: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+    mode: "0644"
+
+- name: Check for the K3s binary
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Read the installed K3s version
+  ansible.builtin.command: /usr/local/bin/k3s --version
+  register: k3s_installed
+  changed_when: false
+  when: k3s_binary.stat.exists
+
+- name: Check for the K3s service definition
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s.service
+  register: k3s_service_unit
+
+- name: Install the requested K3s release
+  when: not k3s_service_unit.stat.exists or (k3s_installed.stdout | default('')).split()[2:3] != [k3s_version]
+  block:
+    - name: Download the K3s installer
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /var/lib/rancher/k3s/install.sh
+        mode: "0700"
+
+    - name: Run the K3s installer for the pinned release
+      ansible.builtin.command: /bin/sh /var/lib/rancher/k3s/install.sh
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: server
+        INSTALL_K3S_SKIP_START: "true"
+        INSTALL_K3S_SKIP_ENABLE: "true"
+      notify: Restart K3s after config changes
+
+- name: Enable and start K3s
+  ansible.builtin.systemd_service:
+    name: k3s
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Apply K3s service changes before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the K3s service is active
+  ansible.builtin.command: systemctl is-active k3s
+  changed_when: false
+
+- name: Wait for the Kubernetes node to be Ready
+  ansible.builtin.command: /usr/local/bin/k3s kubectl wait --for=condition=Ready node --all --timeout=30s
+  register: k3s_node_ready
+  until: k3s_node_ready.rc == 0
+  retries: 20
+  delay: 5
+  changed_when: false
+
+- name: Wait for the Traefik rollout
+  ansible.builtin.command: /usr/local/bin/k3s kubectl -n kube-system rollout status deployment/traefik --timeout=30s
+  register: k3s_traefik_ready
+  until: k3s_traefik_ready.rc == 0
+  retries: 20
+  delay: 5
+  changed_when: false
+
+- name: Verify Traefik exposes only the configured HTTP NodePort
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - -n
+      - kube-system
+      - get
+      - service
+      - traefik
+      - "-o=jsonpath={.spec.type}:{range .spec.ports[*]}{.name}={.nodePort};{end}"
+  register: k3s_traefik_service
+  until: k3s_traefik_service.rc == 0 and k3s_traefik_service.stdout == ('NodePort:web=' ~ k3s_node_port ~ ';')
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Verify the ALB health-check path using the node IPv4 address
+  ansible.builtin.uri:
+    url: "http://{{ ansible_default_ipv4.address }}:{{ k3s_node_port }}/healthcheck"
+    status_code: 200
+    follow_redirects: none
+    use_proxy: false
+    timeout: 5
+  register: k3s_alb_health
+  until: k3s_alb_health.status == 200
+  retries: 30
+  delay: 5

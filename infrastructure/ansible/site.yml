@@ -1,0 +1,6 @@
+---
+- name: Configure the WeatherOps K3s node
+  hosts: k3s
+  become: true
+  roles:
+    - k3s

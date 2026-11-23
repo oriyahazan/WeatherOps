@@ -7,3 +7,27 @@ __pycache__/
 !.env.example
 .coverage
 htmlcov/
+
+# Terraform local files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+.terraformrc
+terraform.rc
+crash.log
+crash.*.log
+
+# Local credentials
+.aws/
+credentials
+*.pem
+*.key
+
+# Ansible local files
+/infrastructure/ansible/**/.ansible/
+/infrastructure/ansible/**/*.retry
+/infrastructure/ansible/**/.vault_pass*
+/infrastructure/ansible/**/vault_password*
